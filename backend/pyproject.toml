@@ -1,18 +1,9 @@
 [project]
-name = "model-recommendation-engine-backend"
+name = "backend"
 version = "0.1.0"
-description = "Minimal FastAPI backend for model recommendation engine"
-requires-python = ">=3.10"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
 dependencies = [
-    "fastapi==0.128.0",
-    "pydantic==2.12.5",
-    "uvicorn[standard]==0.40.0",
+    "django>=6.0.1",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
-
