@@ -18,7 +18,7 @@ class RecommendationEngine:
     CONTEXT_HEADROOM_MULTIPLIER = 1.2
 
     # Minimum cost savings to recommend (10%)
-    MIN_COST_SAVINGS_PERCENT = 10
+    MIN_COST_SAVINGS_PERCENT = 5
 
     # Confidence score weights
     WEIGHT_COST_SAVINGS = 0.5
@@ -28,7 +28,7 @@ class RecommendationEngine:
     def generate_recommendations(
         self,
         usage_analysis: UsageAnalysis,
-        max_recommendations: int = 5
+        max_recommendations: int = None
     ) -> List[Recommendation]:
         """
         Generate recommendations for a usage analysis record.
@@ -94,7 +94,7 @@ class RecommendationEngine:
         candidates = candidates.order_by('estimated_cost')
 
         # Limit results
-        candidates = list(candidates[:max_recommendations * 2])
+        candidates = list(candidates)
 
         # Deactivate old recommendations for this usage analysis
         Recommendation.objects.filter(
@@ -107,8 +107,8 @@ class RecommendationEngine:
         seen_providers = set()
 
         for candidate in candidates:
-            if len(recommendations) >= max_recommendations:
-                break
+            # if len(recommendations) >= max_recommendations:
+            #     break
 
             # Calculate metrics
             estimated_cost = float(candidate.estimated_cost) if candidate.estimated_cost else 0
@@ -126,16 +126,10 @@ class RecommendationEngine:
                 )
 
             # Calculate capability match score
-            capability_score = self._calculate_capability_score(
-                candidate, usage_analysis
-            )
+            capability_score = 0
 
             # Calculate confidence score
-            confidence = self._calculate_confidence(
-                cost_savings_pct=cost_savings_pct,
-                capability_score=capability_score,
-                context_headroom=context_headroom,
-            )
+            confidence = 0
 
             # Determine recommendation type
             rec_type = RecommendationType.CHEAPER
@@ -177,57 +171,6 @@ class RecommendationEngine:
             Recommendation.objects.bulk_create(recommendations)
 
         return recommendations
-
-    def _calculate_capability_score(
-        self,
-        candidate: AIModel,
-        usage: UsageAnalysis
-    ) -> float:
-        """
-        Calculate how well candidate capabilities match user needs.
-        100 = exact match, >100 = has extra features, <100 = missing features
-        """
-        score = 100.0
-
-        # Check tool support
-        if usage.requires_tools:
-            if candidate.supports_tools:
-                score += 0  # Required and present
-            else:
-                score -= 50  # Required but missing
-        elif candidate.supports_tools:
-            score += 5  # Bonus for having tools even if not required
-
-        # Bonus for additional capabilities
-        if candidate.supports_image_input:
-            score += 5
-        if candidate.has_reasoning:
-            score += 10
-        if candidate.supports_cache_control:
-            score += 3
-
-        return score
-
-    def _calculate_confidence(
-        self,
-        cost_savings_pct: float,
-        capability_score: float,
-        context_headroom: float,
-    ) -> float:
-        """Calculate overall confidence score (0-1)."""
-
-        # Normalize inputs to 0-1 scale
-        cost_factor = min(cost_savings_pct / 50, 1.0)  # 50% savings = max
-        capability_factor = min(capability_score / 100, 1.0)
-        headroom_factor = min(context_headroom / 100, 1.0) if context_headroom > 0 else 0.5
-
-        confidence = (
-            self.WEIGHT_COST_SAVINGS * cost_factor +
-            self.WEIGHT_CAPABILITY_MATCH * capability_factor +
-            self.WEIGHT_CONTEXT_HEADROOM * headroom_factor
-        )
-
-        return round(confidence, 3)
 
     def _generate_reasoning(
         self,
