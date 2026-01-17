@@ -6,7 +6,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
-from core.models import Provider, AIModel, Pricing
+from engine.models import Provider, AIModel, Pricing
 
 
 class Command(BaseCommand):

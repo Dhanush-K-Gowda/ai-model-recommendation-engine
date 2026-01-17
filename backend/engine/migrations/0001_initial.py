@@ -55,7 +55,7 @@ class Migration(migrations.Migration):
                 ('is_default', models.BooleanField(default=False)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('provider', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='models', to='core.provider')),
+                ('provider', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='models', to='engine.provider')),
             ],
             options={
                 'ordering': ['provider', 'name'],
@@ -64,7 +64,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='Pricing',
             fields=[
-                ('model', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, primary_key=True, related_name='pricing', serialize=False, to='core.aimodel')),
+                ('model', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, primary_key=True, related_name='pricing', serialize=False, to='engine.aimodel')),
                 ('currency', models.CharField(default='USD', max_length=3)),
                 ('request_token_price', models.DecimalField(db_index=True, decimal_places=8, default=0, help_text='Price per 1M input tokens', max_digits=12, validators=[django.core.validators.MinValueValidator(0)])),
                 ('response_token_price', models.DecimalField(db_index=True, decimal_places=8, default=0, help_text='Price per 1M output tokens', max_digits=12, validators=[django.core.validators.MinValueValidator(0)])),
