@@ -96,14 +96,18 @@ class RecommendationAdmin(admin.ModelAdmin):
     list_display = [
         'application', 'current_model_name', 'recommended_model',
         'recommendation_type', 'estimated_cost_savings_percent',
+        'test_status', 'quality_overall_score', 'actual_avg_cost_per_request',
         'confidence_score', 'is_active', 'created_at'
     ]
-    list_filter = ['recommendation_type', 'is_active', 'is_dismissed', 'application']
+    list_filter = [
+        'recommendation_type', 'is_active', 'is_dismissed', 
+        'test_status', 'application'
+    ]
     search_fields = [
         'application__application_id', 'current_model_name',
         'recommended_model__name'
     ]
-    readonly_fields = ['created_at']
+    readonly_fields = ['created_at', 'test_completed_at']
     raw_id_fields = ['application', 'usage_analysis', 'recommended_model']
 
 

@@ -501,6 +501,46 @@ class Recommendation(models.Model):
     is_active = models.BooleanField(default=True, db_index=True)
     is_dismissed = models.BooleanField(default=False)
 
+    # Test results (actual performance from testing)
+    test_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('completed', 'Completed'),
+            ('failed', 'Failed'),
+            ('skipped', 'Skipped')
+        ],
+        default='pending',
+        db_index=True
+    )
+    test_samples_count = models.PositiveIntegerField(default=0)
+    test_completed_at = models.DateTimeField(null=True, blank=True)
+
+    # Actual metrics from testing
+    actual_avg_latency_sec = models.FloatField(null=True, blank=True)
+    actual_avg_cost_per_request = models.DecimalField(
+        max_digits=12, decimal_places=10, null=True, blank=True
+    )
+    actual_success_rate = models.FloatField(null=True, blank=True)
+
+    # Quality evaluation results
+    quality_scores = models.JSONField(
+        default=dict, blank=True,
+        help_text="Quality scores from LLM-as-judge (correctness, completeness, etc.)"
+    )
+    quality_overall_score = models.FloatField(null=True, blank=True)
+
+    # Comparison metrics vs current model
+    quality_comparison = models.JSONField(
+        default=dict, blank=True,
+        help_text="Quality comparison scores vs current model"
+    )
+    latency_comparison_pct = models.FloatField(null=True, blank=True)
+    cost_comparison_pct = models.FloatField(null=True, blank=True)
+
+    # Error tracking
+    test_error_message = models.TextField(blank=True)
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
 
