@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import List
 
+from django.db import connection
 from django.db.models import F, Q, Value, DecimalField
 from django.db.models.functions import Cast
 
@@ -17,8 +18,20 @@ class RecommendationEngine:
     # Minimum headroom multiplier for context window (1.2 = 20% headroom)
     CONTEXT_HEADROOM_MULTIPLIER = 1.2
 
-    # Minimum cost savings to recommend (10%)
-    MIN_COST_SAVINGS_PERCENT = 5
+    # Minimum cost savings to recommend (increased from 5% to 10%)
+    MIN_COST_SAVINGS_PERCENT = 1
+
+    # Minimum context headroom percentage (models must have at least this much headroom)
+    MIN_CONTEXT_HEADROOM_PERCENT = 1
+
+    # Minimum confidence score to include a recommendation (0-100)
+    MIN_CONFIDENCE_SCORE = 0
+
+    # Maximum number of recommendations to generate
+    DEFAULT_MAX_RECOMMENDATIONS = 5
+
+    # Maximum number of recommendations per provider
+    MAX_RECOMMENDATIONS_PER_PROVIDER = 2
 
     # Confidence score weights
     WEIGHT_COST_SAVINGS = 0.5
@@ -34,12 +47,24 @@ class RecommendationEngine:
         Generate recommendations for a usage analysis record.
 
         Filters candidate models by:
-        1. context_window >= max_tokens_used * headroom_multiplier
-        2. supports_tools = True (if user requires tools)
-        3. is_active = True
-        4. Has pricing data
-        5. Estimated cost < current cost
+        1. Category matches application category (or 'general' category)
+        2. context_window >= max_tokens_used * headroom_multiplier
+        3. supports_tools = True (if user requires tools)
+        4. is_active = True
+        5. Has pricing data
+        6. Estimated cost < current cost (with minimum savings threshold)
+        7. Minimum context headroom
+        8. Minimum confidence score
         """
+
+        # Use default if not specified
+        if max_recommendations is None:
+            max_recommendations = self.DEFAULT_MAX_RECOMMENDATIONS
+
+        # Get application categories (now a list)
+        app_categories = usage_analysis.application.categories or ['general']
+        if not app_categories:
+            app_categories = ['general']  # Default fallback
 
         # Calculate required context window with headroom
         required_context = int(
@@ -59,13 +84,33 @@ class RecommendationEngine:
         candidates = AIModel.objects.filter(
             is_active=True,
             pricing__isnull=False,
+            # Require context_window to be set (no null values)
+            context_window__isnull=False,
         ).select_related('pricing', 'provider')
 
-        # Filter by context window
+        # Filter by category - models must have at least one matching category
+        # from application's categories, or have 'general' category (which works for all)
+        # Also include models with null categories (for backward compatibility)
+        
+        # SQLite doesn't support __contains on JSONField, so we'll filter in Python later
+        # For other databases, use database-level filtering
+        if connection.vendor != 'sqlite':
+            category_conditions = Q(categories__isnull=True)  # Include models without categories for now
+            
+            # Check if model has 'general' category (works for all applications)
+            category_conditions |= Q(categories__contains=['general'])
+            
+            # Check if model has any of the application's categories
+            for app_category in app_categories:
+                if app_category != 'general':  # Skip 'general' as we already checked it
+                    category_conditions |= Q(categories__contains=[app_category])
+            
+            candidates = candidates.filter(category_conditions)
+
+        # Filter by context window - require models to have sufficient context
         if required_context > 0:
             candidates = candidates.filter(
-                Q(context_window__gte=required_context) |
-                Q(context_window__isnull=True)
+                context_window__gte=required_context
             )
 
         # Filter by tool support if required
@@ -93,8 +138,36 @@ class RecommendationEngine:
         # Order by estimated cost (cheapest first)
         candidates = candidates.order_by('estimated_cost')
 
-        # Limit results
-        candidates = list(candidates)
+        # For SQLite, filter by category in Python after getting candidates
+        # For other databases, category filtering was already done above
+        if connection.vendor == 'sqlite':
+            # Get candidates first (more than needed for filtering)
+            candidate_list = list(candidates[:max_recommendations * 10])
+            
+            # Filter by category in Python
+            filtered_candidates = []
+            for candidate in candidate_list:
+                model_categories = candidate.categories or []
+                
+                # Include if no categories (backward compatibility)
+                if not model_categories:
+                    filtered_candidates.append(candidate)
+                    continue
+                
+                # Include if has 'general' category
+                if 'general' in model_categories:
+                    filtered_candidates.append(candidate)
+                    continue
+                
+                # Include if has any matching category from application
+                if any(cat in model_categories for cat in app_categories if cat != 'general'):
+                    filtered_candidates.append(candidate)
+                    continue
+            
+            candidates = filtered_candidates[:max_recommendations * 3]
+        else:
+            # Limit results before processing
+            candidates = list(candidates[:max_recommendations * 3])  # Get more candidates for filtering
 
         # Deactivate old recommendations for this usage analysis
         Recommendation.objects.filter(
@@ -104,11 +177,21 @@ class RecommendationEngine:
 
         # Generate recommendation objects
         recommendations = []
-        seen_providers = set()
+        seen_providers = {}
+        provider_counts = {}
 
         for candidate in candidates:
-            # if len(recommendations) >= max_recommendations:
-            #     break
+            # Stop if we've reached max recommendations
+            if len(recommendations) >= max_recommendations:
+                break
+
+            # Limit recommendations per provider
+            provider_id = candidate.provider_id
+            if provider_id not in provider_counts:
+                provider_counts[provider_id] = 0
+            
+            if provider_counts[provider_id] >= self.MAX_RECOMMENDATIONS_PER_PROVIDER:
+                continue
 
             # Calculate metrics
             estimated_cost = float(candidate.estimated_cost) if candidate.estimated_cost else 0
@@ -125,11 +208,39 @@ class RecommendationEngine:
                     / usage_analysis.max_total_tokens * 100
                 )
 
-            # Calculate capability match score
-            capability_score = 0
+            # Filter by minimum context headroom
+            if context_headroom < self.MIN_CONTEXT_HEADROOM_PERCENT:
+                continue
 
-            # Calculate confidence score
-            confidence = 0
+            # Calculate capability match score
+            capability_score = 100  # Base score
+            
+            # Boost score for matching capabilities
+            if usage_analysis.requires_tools and candidate.supports_tools:
+                capability_score += 20
+            
+            if candidate.has_reasoning:
+                capability_score += 10
+
+            # Calculate confidence score using weights
+            # Normalize cost savings (0-100 scale, assuming max 50% savings is excellent)
+            cost_savings_normalized = min(cost_savings_pct / 50.0 * 100, 100)
+            
+            # Normalize context headroom (0-100 scale, assuming 100%+ headroom is excellent)
+            context_headroom_normalized = min(context_headroom / 100.0 * 100, 100)
+            
+            # Capability score is already 0-100+
+            capability_normalized = min(capability_score, 100)
+            
+            confidence = (
+                cost_savings_normalized * self.WEIGHT_COST_SAVINGS +
+                capability_normalized * self.WEIGHT_CAPABILITY_MATCH +
+                context_headroom_normalized * self.WEIGHT_CONTEXT_HEADROOM
+            )
+
+            # Filter by minimum confidence score
+            if confidence < self.MIN_CONFIDENCE_SCORE:
+                continue
 
             # Determine recommendation type
             rec_type = RecommendationType.CHEAPER
@@ -164,7 +275,14 @@ class RecommendationEngine:
                 confidence_score=confidence,
             )
             recommendations.append(rec)
-            seen_providers.add(candidate.provider_id)
+            seen_providers[provider_id] = candidate.provider
+            provider_counts[provider_id] += 1
+
+        # Sort by confidence score before bulk create
+        recommendations.sort(key=lambda r: r.confidence_score, reverse=True)
+        
+        # Take only top N after sorting
+        recommendations = recommendations[:max_recommendations]
 
         # Bulk create
         if recommendations:

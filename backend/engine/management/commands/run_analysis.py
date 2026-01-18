@@ -56,6 +56,34 @@ class Command(BaseCommand):
 
             # Run usage analysis
             analyses = analyzer.analyze_application(app)
+            
+            # If app has an assigned_model, filter analyses to only that model
+            if app.assigned_model:
+                # Filter to only analyses matching the assigned model
+                # Check by model_id, name, or slug
+                assigned_model_name = app.assigned_model.name.lower()
+                assigned_model_slug = app.assigned_model.slug.lower()
+                original_count = len(analyses)
+                
+                analyses = [
+                    a for a in analyses 
+                    if (a.model_id == app.assigned_model_id) or 
+                       (a.raw_model_name.lower() == assigned_model_name) or
+                       (a.raw_model_name.lower() == assigned_model_slug)
+                ]
+                
+                if original_count > len(analyses):
+                    self.stdout.write(
+                        f'  Filtered from {original_count} to {len(analyses)} analysis(ies) '
+                        f'for assigned model: {app.assigned_model.name}'
+                    )
+                elif not analyses:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f'  Warning: No usage found for assigned model {app.assigned_model.name}'
+                        )
+                    )
+            
             total_analyses += len(analyses)
             self.stdout.write(f'  Created {len(analyses)} usage analyses')
 

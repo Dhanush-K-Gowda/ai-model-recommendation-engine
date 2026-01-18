@@ -31,6 +31,55 @@ class ModelType(models.TextChoices):
     MODERATION = 'moderation', 'Moderation'
 
 
+class ApplicationCategory(models.TextChoices):
+    """
+    Real-world use case categories for LLM applications.
+    Based on common production patterns and industry standards.
+    """
+    GENERAL = 'general', 'General Purpose'
+    CODING = 'coding', 'Code Generation & Development'
+    CODE_REVIEW = 'code_review', 'Code Review & Analysis'
+    DOCUMENTATION = 'documentation', 'Technical Documentation'
+    CUSTOMER_SUPPORT = 'customer_support', 'Customer Support & Helpdesk'
+    CHATBOT = 'chatbot', 'Conversational AI & Chatbots'
+    FAQ = 'faq', 'FAQ & Knowledge Base'
+    CONTENT_CREATION = 'content_creation', 'Content Writing & Blogging'
+    MARKETING = 'marketing', 'Marketing Copy & Campaigns'
+    SOCIAL_MEDIA = 'social_media', 'Social Media Content'
+    EMAIL = 'email', 'Email Composition & Responses'
+    DATA_ANALYSIS = 'data_analysis', 'Data Analysis & Insights'
+    BUSINESS_INTELLIGENCE = 'business_intelligence', 'Business Intelligence'
+    REPORTING = 'reporting', 'Report Generation'
+    FINANCE = 'finance', 'Financial Analysis & Trading'
+    ACCOUNTING = 'accounting', 'Accounting & Bookkeeping'
+    RISK_ASSESSMENT = 'risk_assessment', 'Risk Analysis'
+    HEALTHCARE = 'healthcare', 'Healthcare & Medical'
+    CLINICAL = 'clinical', 'Clinical Documentation'
+    RESEARCH = 'research', 'Medical Research'
+    LEGAL = 'legal', 'Legal Research & Analysis'
+    COMPLIANCE = 'compliance', 'Compliance & Regulatory'
+    CONTRACT = 'contract', 'Contract Analysis'
+    EDUCATION = 'education', 'Education & E-Learning'
+    TUTORING = 'tutoring', 'Tutoring & Learning Assistant'
+    TRAINING = 'training', 'Corporate Training'
+    SALES = 'sales', 'Sales & Lead Generation'
+    CRM = 'crm', 'CRM & Customer Management'
+    TRANSLATION = 'translation', 'Translation & Localization'
+    MULTILINGUAL = 'multilingual', 'Multilingual Support'
+    SEARCH = 'search', 'Search & Information Retrieval'
+    RAG = 'rag', 'RAG (Retrieval Augmented Generation)'
+    CREATIVE = 'creative', 'Creative Writing & Storytelling'
+    MEDIA = 'media', 'Media & Entertainment'
+    MODERATION = 'moderation', 'Content Moderation'
+    SECURITY = 'security', 'Security & Threat Detection'
+    ECOMMERCE = 'ecommerce', 'E-commerce & Product Descriptions'
+    RECOMMENDATION = 'recommendation', 'Product Recommendations'
+    HR = 'hr', 'Human Resources & Recruiting'
+    RECRUITMENT = 'recruitment', 'Recruitment & Screening'
+    REASONING = 'reasoning', 'Advanced Reasoning & Problem Solving'
+    OTHER = 'other', 'Other / Custom Use Case'
+
+
 class AIModel(models.Model):
     """
     Represents a specific AI model offered by a provider.
@@ -79,6 +128,14 @@ class AIModel(models.Model):
 
     # JSON field for additional/uncommon capabilities
     additional_capabilities = models.JSONField(default=dict, blank=True)
+
+    # Categories - models can belong to multiple categories
+    categories = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="List of categories this model is suitable for (e.g., ['coding', 'general', 'finance'])",
+        db_index=True
+    )
 
     # Full parameter configuration
     parameter_config = models.JSONField(default=dict, blank=True)
@@ -211,6 +268,26 @@ class Application(models.Model):
     application_id = models.CharField(max_length=100, unique=True, db_index=True)
     name = models.CharField(max_length=200, blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    
+    # Application categories (1-2 categories derived from assigned_model)
+    categories = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of categories this application belongs to (derived from assigned_model, 1-2 categories)",
+        db_index=True
+    )
+    
+    # Assigned model for this application
+    assigned_model = models.ForeignKey(
+        AIModel,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='applications',
+        db_index=True,
+        help_text="The primary model assigned to this application"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

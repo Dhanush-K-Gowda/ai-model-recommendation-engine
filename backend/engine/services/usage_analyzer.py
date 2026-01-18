@@ -6,6 +6,7 @@ from django.db.models import Max, Avg, Count, Sum, Q
 from django.utils import timezone
 
 from engine.models import Application, LLMTrace, UsageAnalysis
+from engine.services.model_resolver import ModelResolver
 
 
 class UsageAnalyzer:
