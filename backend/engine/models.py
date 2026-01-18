@@ -144,6 +144,13 @@ class AIModel(models.Model):
         db_index=True
     )
 
+    # Benchmark scores for quality assessment
+    benchmark_scores = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Benchmark scores (e.g., {'MMLU': 88.7, 'HumanEval': 88.0})"
+    )
+
     # Full parameter configuration
     parameter_config = models.JSONField(default=dict, blank=True)
 

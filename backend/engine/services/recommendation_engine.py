@@ -33,10 +33,19 @@ class RecommendationEngine:
     # Maximum number of recommendations per provider
     MAX_RECOMMENDATIONS_PER_PROVIDER = 2
 
-    # Confidence score weights
-    WEIGHT_COST_SAVINGS = 0.5
-    WEIGHT_CAPABILITY_MATCH = 0.3
-    WEIGHT_CONTEXT_HEADROOM = 0.2
+    # Confidence score weights (rebalanced to prioritize quality over cost)
+    WEIGHT_COST_SAVINGS = 0.25       # Reduced from 50%
+    WEIGHT_CAPABILITY_MATCH = 0.20
+    WEIGHT_CONTEXT_HEADROOM = 0.15
+    WEIGHT_BENCHMARK = 0.40          # NEW: Benchmark quality is primary factor
+
+    # Benchmark normalization settings
+    BENCHMARK_WEIGHTS = {
+        'MMLU': 0.4,                  # General knowledge
+        'HumanEval': 0.4,             # Coding ability
+        'SWE-bench Verified': 0.2,    # Real-world coding
+    }
+    DEFAULT_BENCHMARK_SCORE = 50      # For models without benchmarks
 
     def generate_recommendations(
         self,
@@ -95,12 +104,12 @@ class RecommendationEngine:
             provider_filter |= Q(provider__name__iexact=provider_name) | Q(provider__slug__iexact=provider_name)
         
         candidates = AIModel.objects.filter(
+            provider_filter,  # Only include models from allowed providers
             is_active=True,
             is_deprecated=False,  # Exclude deprecated models
             pricing__isnull=False,
             # Require context_window to be set (no null values)
             context_window__isnull=False,
-            provider_filter,  # Only include models from allowed providers
         ).select_related('pricing', 'provider')
 
         # Filter by category - models must have at least one matching category
@@ -250,17 +259,21 @@ class RecommendationEngine:
             # Calculate confidence score using weights
             # Normalize cost savings (0-100 scale, assuming max 50% savings is excellent)
             cost_savings_normalized = min(cost_savings_pct / 50.0 * 100, 100)
-            
+
             # Normalize context headroom (0-100 scale, assuming 100%+ headroom is excellent)
             context_headroom_normalized = min(context_headroom / 100.0 * 100, 100)
-            
+
             # Capability score is already 0-100+
             capability_normalized = min(capability_score, 100)
-            
+
+            # Calculate benchmark score (0-100 scale)
+            benchmark_score = self._calculate_benchmark_score(candidate)
+
             confidence = (
                 cost_savings_normalized * self.WEIGHT_COST_SAVINGS +
                 capability_normalized * self.WEIGHT_CAPABILITY_MATCH +
-                context_headroom_normalized * self.WEIGHT_CONTEXT_HEADROOM
+                context_headroom_normalized * self.WEIGHT_CONTEXT_HEADROOM +
+                benchmark_score * self.WEIGHT_BENCHMARK
             )
 
             # Filter by minimum confidence score
@@ -315,6 +328,28 @@ class RecommendationEngine:
 
         return recommendations
 
+    def _calculate_benchmark_score(self, candidate: AIModel) -> float:
+        """Calculate normalized benchmark score (0-100) from model's benchmark data."""
+        if not candidate.benchmark_scores:
+            return self.DEFAULT_BENCHMARK_SCORE
+
+        scores = candidate.benchmark_scores
+        total_weight = 0
+        weighted_sum = 0
+
+        for benchmark, weight in self.BENCHMARK_WEIGHTS.items():
+            if benchmark in scores:
+                value = scores[benchmark]
+                # Handle non-numeric values (e.g., "#1" or "excellent")
+                if isinstance(value, (int, float)):
+                    weighted_sum += value * weight
+                    total_weight += weight
+
+        if total_weight == 0:
+            return self.DEFAULT_BENCHMARK_SCORE
+
+        return weighted_sum / total_weight
+
     def _generate_reasoning(
         self,
         candidate: AIModel,
@@ -324,6 +359,22 @@ class RecommendationEngine:
     ) -> str:
         """Generate human-readable reasoning for the recommendation."""
         reasons = []
+
+        # Add benchmark quality info first (most important)
+        if candidate.benchmark_scores:
+            mmlu = candidate.benchmark_scores.get('MMLU')
+            humaneval = candidate.benchmark_scores.get('HumanEval')
+            swe_bench = candidate.benchmark_scores.get('SWE-bench Verified')
+
+            if swe_bench and swe_bench >= 60:
+                reasons.append(f"Top-tier coding model (SWE-bench: {swe_bench}%)")
+            elif mmlu and mmlu >= 88:
+                reasons.append(f"High quality model (MMLU: {mmlu}%)")
+            elif mmlu and mmlu >= 85:
+                reasons.append(f"Strong benchmark performance (MMLU: {mmlu}%)")
+
+            if humaneval and humaneval >= 85:
+                reasons.append(f"Excellent coding capability (HumanEval: {humaneval}%)")
 
         if cost_savings_pct >= 10:
             monthly_savings = float(usage.avg_cost_per_request) * usage.total_requests * (cost_savings_pct / 100)
