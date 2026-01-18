@@ -57,6 +57,14 @@ class Command(BaseCommand):
                     pricing_data[provider_name] = json.load(f)
                 self.stdout.write(f'Loaded pricing: {provider_name}')
 
+        # Load model categories and benchmark scores
+        categories_file = project_root / 'scripts/data' / 'model_categories.json'
+        categories_data = {}
+        if categories_file.exists():
+            with open(categories_file, 'r') as f:
+                categories_data = json.load(f)
+            self.stdout.write(f'Loaded categories/benchmarks for {len(categories_data)} models')
+
         # Process general model data
         providers_created = 0
         models_created = 0
@@ -143,6 +151,11 @@ class Command(BaseCommand):
                 standard_caps = {'image', 'tools', 'audio', 'pdf', 'doc', 'cache_control'}
                 additional_caps = {cap: True for cap in supported if cap not in standard_caps}
 
+                # Get categories and benchmark scores from model_categories.json
+                model_category_info = categories_data.get(model_name, {})
+                model_categories = model_category_info.get('categories')
+                benchmark_scores = model_category_info.get('benchmark_scores')
+
                 # Create or update model
                 model_slug = slugify(model_name)
                 ai_model, created = AIModel.objects.update_or_create(
@@ -166,6 +179,8 @@ class Command(BaseCommand):
                         'thinking_budget_min': thinking_budget_min,
                         'thinking_budget_max': thinking_budget_max,
                         'is_default': model_data.get('isDefault', False),
+                        'categories': model_categories,
+                        'benchmark_scores': benchmark_scores,
                     }
                 )
                 if created:
@@ -226,4 +241,5 @@ class Command(BaseCommand):
         self.stdout.write(f'  - with reasoning: {AIModel.objects.filter(has_reasoning=True).count()}')
         self.stdout.write(f'  - with image support: {AIModel.objects.filter(supports_image_input=True).count()}')
         self.stdout.write(f'  - with tools support: {AIModel.objects.filter(supports_tools=True).count()}')
+        self.stdout.write(f'  - with benchmark scores: {AIModel.objects.exclude(benchmark_scores__isnull=True).count()}')
         self.stdout.write(f'  Pricing entries: {Pricing.objects.count()}')
