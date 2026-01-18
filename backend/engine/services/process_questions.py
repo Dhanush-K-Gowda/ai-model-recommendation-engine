@@ -6,7 +6,7 @@ import json
 
 # Initialize Portkey client
 portkey = Portkey(
-    api_key="17Kpc3zpdJeS9aptj7LBm7Tv1x+x"
+    api_key="" # move to env
 )
 
 # Model Configuration

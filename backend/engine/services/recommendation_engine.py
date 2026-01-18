@@ -80,13 +80,27 @@ class RecommendationEngine:
         avg_input = usage_analysis.avg_input_tokens
         avg_output = usage_analysis.avg_output_tokens
 
+        # Define allowed providers (OpenAI, Claude/Anthropic, Gemini/Google)
+        # These are the only providers we want to recommend from
+        allowed_provider_names = {
+            'open-ai', 'openai', 'azure-openai', 'azure',
+            'anthropic',
+            'google', 'vertex-ai'
+        }
+        
         # Build base queryset
+        # Filter by allowed providers (case-insensitive on name and slug)
+        provider_filter = Q()
+        for provider_name in allowed_provider_names:
+            provider_filter |= Q(provider__name__iexact=provider_name) | Q(provider__slug__iexact=provider_name)
+        
         candidates = AIModel.objects.filter(
             is_active=True,
             is_deprecated=False,  # Exclude deprecated models
             pricing__isnull=False,
             # Require context_window to be set (no null values)
             context_window__isnull=False,
+            provider_filter,  # Only include models from allowed providers
         ).select_related('pricing', 'provider')
 
         # Filter by category - models must have at least one matching category
@@ -145,11 +159,17 @@ class RecommendationEngine:
             # Get candidates first (more than needed for filtering)
             candidate_list = list(candidates[:max_recommendations * 10])
             
-            # Filter by category in Python (also exclude deprecated models)
+            # Filter by category in Python (also exclude deprecated models and deprecated providers)
             filtered_candidates = []
             for candidate in candidate_list:
                 # Skip deprecated models
                 if candidate.is_deprecated:
+                    continue
+                
+                # Skip models from deprecated providers (not in allowed list)
+                provider_key = candidate.provider.name.lower()
+                provider_slug = candidate.provider.slug.lower()
+                if provider_key not in allowed_provider_names and provider_slug not in allowed_provider_names:
                     continue
                 
                 model_categories = candidate.categories or []
