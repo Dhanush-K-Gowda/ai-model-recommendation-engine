@@ -1,10 +1,12 @@
-import { LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard, Layers, Sparkles } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { cn } from '../../lib/utils';
 
 const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
+    { icon: Layers, label: 'Applications', href: '/applications' },
+    { icon: Sparkles, label: 'Recommendations', href: '/recommendations' },
 ];
 
 export default function Sidebar() {
