@@ -26,10 +26,11 @@ class ProviderAdmin(admin.ModelAdmin):
 class AIModelAdmin(admin.ModelAdmin):
     list_display = [
         'name', 'provider', 'model_type', 'context_window',
-        'has_reasoning', 'supports_image_input', 'supports_tools', 'is_active'
+        'has_reasoning', 'supports_image_input', 'supports_tools', 
+        'is_active', 'is_deprecated'
     ]
     list_filter = [
-        'provider', 'model_type', 'is_active',
+        'provider', 'model_type', 'is_active', 'is_deprecated',
         'has_reasoning', 'supports_image_input', 'supports_tools',
         'supports_audio', 'supports_cache_control'
     ]

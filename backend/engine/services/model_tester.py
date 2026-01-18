@@ -1,4 +1,5 @@
 import time
+import logging
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 from django.conf import settings
@@ -7,6 +8,9 @@ from portkey_ai import Portkey
 import requests
 
 from engine.models import AIModel, LLMTrace, Recommendation, Pricing
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 # Initialize Portkey client
@@ -36,6 +40,10 @@ PROVIDER_MAP = {
 def extract_error_reason(exception):
     """Extract specific error reason and status from exception."""
     error_str = str(exception).lower()
+    
+    # Check for deprecated models (must check before other 404 checks)
+    if 'deprecated' in error_str:
+        return 'model_deprecated', "Model has been deprecated"
     
     # Check for HTTP status codes
     if '403' in error_str or 'forbidden' in error_str:
@@ -150,6 +158,16 @@ def call_model_via_portkey(prompt: str, aimodel: AIModel, max_tokens: int = 4096
     except Exception as e:
         latency_sec = time.time() - start_time if 'start_time' in locals() else 0
         status, reason = extract_error_reason(e)
+        
+        # Auto-mark as deprecated if detected
+        if status == 'model_deprecated':
+            if not aimodel.is_deprecated:
+                aimodel.is_deprecated = True
+                aimodel.save(update_fields=['is_deprecated'])
+                logger.warning(f"  ⚠ Marked model as deprecated: {aimodel.name} ({aimodel.provider.name})")
+        
+        logger.error(f"  ✗ Error: {status} - {reason}")
+        logger.debug(f"  Exception details: {str(e)}")
         return {
             'content': '',
             'input_tokens': 0,

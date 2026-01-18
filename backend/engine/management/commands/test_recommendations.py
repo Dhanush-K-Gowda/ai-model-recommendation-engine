@@ -1,8 +1,7 @@
 from django.core.management.base import BaseCommand
-from django.db import transaction
 from django.utils import timezone
 
-from engine.models import Application, Recommendation
+from engine.models import Application, Recommendation, UsageAnalysis
 from engine.services.model_tester import test_recommendation
 
 
@@ -36,6 +35,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Show what would be tested without making changes'
         )
+        parser.add_argument(
+            '--model',
+            type=str,
+            help='Test recommendations for specific model only (current_model_name)'
+        )
 
     def handle(self, *args, **options):
         app_id = options.get('app')
@@ -43,6 +47,7 @@ class Command(BaseCommand):
         sample_size = options.get('sample_size', 20)
         evaluate_quality = not options.get('skip_quality', False)
         dry_run = options.get('dry_run', False)
+        model_name = options.get('model')
         
         if dry_run:
             self.stdout.write(self.style.WARNING('DRY RUN MODE - No changes will be made'))
@@ -69,18 +74,60 @@ class Command(BaseCommand):
         for app in applications:
             self.stdout.write(f'\n{"="*80}')
             self.stdout.write(f'Testing recommendations for: {app.application_id}')
+            if model_name:
+                self.stdout.write(f'  Filtering by model: {model_name}')
             self.stdout.write(f'{"="*80}')
             
-            # Get top 5 active recommendations for this application
-            recommendations = Recommendation.objects.filter(
+            # Get recommendations filtered by most recent usage analysis for each model
+            # This ensures we test recommendations that match what's displayed when
+            # filtering by a specific usage analysis
+            base_query = Recommendation.objects.filter(
                 application=app,
                 is_active=True
-            ).order_by('-confidence_score')[:5]
+            )
+            
+            # Determine which models to process
+            if model_name:
+                # If model filter is specified, only process that model
+                model_names = [model_name]
+                base_query = base_query.filter(current_model_name=model_name)
+            else:
+                # Get all unique current_model_name values from active recommendations
+                model_names = base_query.values_list('current_model_name', flat=True).distinct()
+            
+            # Get the most recent UsageAnalysis for each current_model_name
+            # We'll filter recommendations to only those from the most recent analyses
+            recent_analysis_ids = []
+            for model_name_val in model_names:
+                # Get the most recent analysis for this model in this application
+                recent_analysis = UsageAnalysis.objects.filter(
+                    application=app,
+                    raw_model_name=model_name_val
+                ).order_by('-analysis_period_end', '-created_at').first()
+                
+                if recent_analysis:
+                    recent_analysis_ids.append(recent_analysis.id)
+            
+            # Filter recommendations to only those from the most recent analyses
+            if recent_analysis_ids:
+                base_query = base_query.filter(usage_analysis_id__in=recent_analysis_ids)
+            else:
+                # No recent analyses found, set to empty queryset
+                base_query = base_query.none()
+            
+            # Get top 5 recommendations ordered by confidence score
+            recommendations = base_query.order_by('-confidence_score')[:5]
             
             if not recommendations.exists():
-                self.stdout.write(self.style.WARNING(
-                    f'  No active recommendations found for {app.application_id}'
-                ))
+                if model_name:
+                    self.stdout.write(self.style.WARNING(
+                        f'  No active recommendations found for {app.application_id} '
+                        f'with model {model_name}'
+                    ))
+                else:
+                    self.stdout.write(self.style.WARNING(
+                        f'  No active recommendations found for {app.application_id}'
+                    ))
                 continue
             
             self.stdout.write(f'  Found {recommendations.count()} recommendations to test\n')

@@ -83,6 +83,7 @@ class RecommendationEngine:
         # Build base queryset
         candidates = AIModel.objects.filter(
             is_active=True,
+            is_deprecated=False,  # Exclude deprecated models
             pricing__isnull=False,
             # Require context_window to be set (no null values)
             context_window__isnull=False,
@@ -144,9 +145,13 @@ class RecommendationEngine:
             # Get candidates first (more than needed for filtering)
             candidate_list = list(candidates[:max_recommendations * 10])
             
-            # Filter by category in Python
+            # Filter by category in Python (also exclude deprecated models)
             filtered_candidates = []
             for candidate in candidate_list:
+                # Skip deprecated models
+                if candidate.is_deprecated:
+                    continue
+                
                 model_categories = candidate.categories or []
                 
                 # Include if no categories (backward compatibility)

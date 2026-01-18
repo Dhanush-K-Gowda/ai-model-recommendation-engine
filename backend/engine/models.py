@@ -125,6 +125,13 @@ class AIModel(models.Model):
     supports_doc = models.BooleanField(default=False, db_index=True)
     has_reasoning = models.BooleanField(default=False, db_index=True)
     supports_cache_control = models.BooleanField(default=False, db_index=True)
+    
+    # Status flags
+    is_deprecated = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Model has been deprecated by the provider and is no longer available"
+    )
 
     # JSON field for additional/uncommon capabilities
     additional_capabilities = models.JSONField(default=dict, blank=True)
