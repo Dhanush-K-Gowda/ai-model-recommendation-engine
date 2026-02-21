@@ -93,18 +93,21 @@ model-recommendation-engine/
 
 ## Current Issues & Improvements
 
-### Critical Issues
+### Critical Issues (FIXED)
 
-1. **Performance - N+1 Queries**
-   - Views load all traces into memory for aggregation
-   - Should use Django ORM `.aggregate()` and `.annotate()`
-   - Location: `views.py:129-131`, `185-190`, `588-591`
+1. **~~Performance - N+1 Queries~~** ✅ FIXED
+   - Views now use Django ORM `.aggregate()` for cost/token calculations
+   - Location: `views.py:applications_list`, `application_detail`, `dashboard_stats`
 
-2. **Performance - Inefficient Bulk Ingestion**
+2. **~~Division by Zero~~** ✅ FIXED
+   - Added null/zero checks in recommendation engine
+   - Location: `recommendation_engine.py:235, 241-243`
+
+3. **Performance - Inefficient Bulk Ingestion**
    - Creates traces one-by-one instead of `bulk_create()`
    - Location: `serializers.py:226-234`
 
-3. **Silent Error Handling**
+4. **Silent Error Handling**
    - Bulk ingestion ignores validation errors silently
    - Should collect and report errors
 
@@ -150,12 +153,11 @@ model-recommendation-engine/
 
 ### Potential Bugs
 
-13. **Division by Zero**
-    - `recommendation_engine.py:235, 241-243` - potential division by zero
-    - Need proper null/zero checks
+13. **~~Division by Zero~~** ✅ FIXED
+    - `recommendation_engine.py` - added proper null/zero checks
 
-14. **Unused Variables**
-    - `views.py:118-123` - partially used variables
+14. **~~Unused Variables~~** ✅ FIXED
+    - `views.py` - optimized queries to use DB aggregation
 
 ### Missing Features
 
