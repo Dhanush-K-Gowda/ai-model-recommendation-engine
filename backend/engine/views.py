@@ -81,24 +81,27 @@ def ingest_traces_bulk(request):
 
         if serializer.is_valid():
             traces = serializer.save()
-            return JsonResponse(
-                {
-                    "status": "success",
-                    "message": f"{len(traces)} traces ingested successfully",
-                    "data": {
-                        "count": len(traces),
-                        "traces": [
-                            {
-                                "id": trace.id,
-                                "external_id": trace.external_id,
-                                "application_id": trace.application.application_id,
-                            }
-                            for trace in traces
-                        ],
-                    },
+            response_data = {
+                "status": "success",
+                "message": f"{len(traces)} traces ingested successfully",
+                "data": {
+                    "count": len(traces),
+                    "traces": [
+                        {
+                            "id": trace.id,
+                            "external_id": trace.external_id,
+                            "application_id": trace.application.application_id,
+                        }
+                        for trace in traces
+                    ],
                 },
-                status=201,
-            )
+            }
+            if hasattr(serializer, "errors") and serializer.errors:
+                response_data["warning"] = {
+                    "message": f"{len(serializer.errors)} traces had validation errors",
+                    "errors": serializer.errors,
+                }
+            return JsonResponse(response_data, status=201)
         else:
             return JsonResponse(
                 {
